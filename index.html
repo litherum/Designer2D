@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+</head>
+<body style="margin: 0px;">
+<div style="width: 100vw; height: 100vh; padding: 8px; box-sizing: border-box; display: flex; flex-direction: column;">
+    <div style="display: flex; flex-direction: row; justify-content: flex-end;">
+        <div style="width: 50px; height: 50px; background-color: blue; margin: 8px;"></div>
+        <div style="width: 50px; height: 50px; background-color: blue; margin: 8px;"></div>
+        <div style="width: 50px; height: 50px; background-color: blue; margin: 8px;"></div>
+    </div>
+    <div style="flex-grow: 1; display: flex; flex-direction: row;">
+        <div style="width: 50px; height: 400px; background-color: blue; margin-right: 8px;"></div>
+        <div style="position: relative; flex-grow: 1; background-color: grey;">
+            <div style="position: absolute; width: 100%; height: 100%; overflow: scroll;">
+                <svg width="600px" height="600px">
+                    <rect x="0" y="0" width="600" height="600" fill="red"/>
+                </svg>
+            </div>
+        </div>
+    </div>
+    <div style="display: flex; flex-direction: row; justify-content: flex-start;">
+        <div style="width: 50px; height: 50px; background-color: red; margin: 8px;"></div>
+        <div style="width: 50px; height: 50px; background-color: red; margin: 8px;"></div>
+        <div style="width: 50px; height: 50px; background-color: red; margin: 8px;"></div>
+    </div>
+<!--div style="overflow: scroll; background: green;">
+
+</div-->
+</div>
+</body>
+</html>
