@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="50px" height="50px" >
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        fill: none;
+        stroke: #000;
+        stroke-miterlimit: 10;
+      }
+    </style>
+  </defs>
+  <title>save</title>
+  <g transform="translate(0, 3)">
+    <polygon points="44 44 0 44 0 0 37 0 44 7 44 44"/>
+    <rect class="cls-1" x="7.7" y="3.46" width="28.59" height="15.15" rx="5" ry="5"/>
+    <rect x="24.67" y="5.56" width="5.65" height="10.94"/>
+    <rect class="cls-1" x="4.63" y="22.75" width="33.63" height="19.69"/>
+    <line class="cls-2" x1="8.72" y1="26.88" x2="34.78" y2="26.88"/>
+    <line class="cls-2" x1="8.72" y1="30.98" x2="34.78" y2="30.98"/>
+    <line class="cls-2" x1="8.72" y1="35.08" x2="34.78" y2="35.08"/>
+    <line class="cls-2" x1="8.72" y1="39.18" x2="34.78" y2="39.18"/>
+  </g>
+</svg>
