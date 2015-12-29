@@ -25,6 +25,7 @@
 		})
 	};
 	Path.prototype.svgData = function() {
+		// FIXME: Do this with SVGPathSegList OM.
 		var result = ""
 		for (var i = 0; i < this.components.length; ++i) {
 			var element = this.components[i];
@@ -39,9 +40,16 @@
 		return result;
 	}
 
+
+
+
+	// Enums
+
 	var Mode = {
 		NOTHING: 0,
-		CREATING_SHAPE: 1
+		CREATING_SHAPE: 1,
+		SELECTING_HANDLE: 2,
+		MOVING_HANDLES: 3
 	};
 
 	var Tool = {
@@ -55,25 +63,136 @@
 		OVAL: 1
 	}
 
-	var iconMap;
 
-	var model = {
-		shapes: [],
-		mode: Mode.NOTHING,
-		tool: Tool.SELECTION
-	};
+
+
+	// Model
+
+	var iconMap = new Map();
+
+	var shapeElementMap = new Map();
+	var elementShapeMap = new Map();
+	var mode = Mode.NOTHING;
+	var tool = Tool.SELECTION;
 	var initialShapeDetails;
+	var selectionDetails = {
+		handleElements: new Map(),
+		selectedShapes: new Map(),
+		gestureStartX: 0,
+		gestureStartY: 0
+	};
 
-	// Elements
-	var content;
-	var initialShape;
+
+	var contentElement;
+
+
+
+
+	function updateHandle(shape, index) {
+		var info = selectionDetails.selectedShapes.get(shape).get(index);
+		var element = info.handle;
+		if (info.selected) {
+			element.style.fill = "white";
+			element.style.stroke = "none";
+		} else {
+			element.style.fill = "transparent";
+			element.style.stroke = "white";
+		}
+	}
+
+	function toggleHandleSelection(handle) {
+		var info = selectionDetails.handleElements.get(handle);
+		var shape = info.shape;
+		var index = info.index;
+		var selectedInfo = selectionDetails.selectedShapes.get(shape).get(index);
+		selectedInfo.selected = !selectedInfo.selected;
+		updateHandle(shape, index);
+	}
+
+	function moveSelectedComponents(dx, dy) {
+		selectionDetails.selectedShapes.forEach(function(indexMap, shape) {
+			indexMap.forEach(function(info, index) {
+				if (!info.selected) {
+					return;
+				}
+				info.handle.x.baseVal.value += dx;
+				info.handle.y.baseVal.value += dy;
+				var component = shape.components[index];
+				if (component.type == PathComponent.MOVE) {
+					component.data[0] += dx;
+					component.data[1] += dy;
+				} else if (component.type == PathComponent.LINE) {
+					component.data[0] += dx;
+					component.data[1] += dy;
+				} else if (component.type == PathComponent.CLOSE) {
+				}
+			});
+			updateElement(shape);
+		});
+		selectionDetails.gestureStartX += dx;
+		selectionDetails.gestureStartY += dy;
+	}
+
+	function selectShape(shape) {
+		function addHandle(x, y) {
+			var handle = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+			handle.x.baseVal.value = x - 4;
+			handle.y.baseVal.value = y - 4;
+			handle.width.baseVal.value = 8;
+			handle.height.baseVal.value = 8;
+			handle.style.fill = "white";
+			handle.style.stroke = "none";
+			contentElement.appendChild(handle);
+			return handle;
+		}
+		var indexMap = new Map();
+		for (var i = 0; i < shape.components.length; ++i) {
+			var component = shape.components[i];
+			if (component.type == PathComponent.MOVE) {
+				var handle = addHandle(component.data[0], component.data[1]);
+				indexMap.set(i, {
+					handle: handle,
+					selected: true
+				});
+			} else if (component.type == PathComponent.LINE) {
+				var handle = addHandle(component.data[0], component.data[1]);
+				indexMap.set(i, {
+					handle: handle,
+					selected: true
+				});
+			} else if (component.type == PathComponent.CLOSE) {
+			}
+		}
+
+		indexMap.forEach(function(handleInfo, index) {
+			selectionDetails.handleElements.set(handleInfo.handle, {
+				shape: shape,
+				index: index
+			});
+		});
+		selectionDetails.selectedShapes.set(shape, indexMap);
+	}
+
+	function clearSelection() {
+		selectionDetails.handleElements.forEach(function(info, handle) {
+			handle.parentNode.removeChild(handle);
+		});
+		selectionDetails.handleElements.clear();
+		selectionDetails.selectedShapes.clear();
+	}
+
+	function updateElement(path) {
+		var element = shapeElementMap.get(path);
+		element.setAttribute("d", path.svgData());
+		element.style.fill = "red";
+	}
 
 	function addPath(path) {
-		model.shapes.push(path);
 		var element = document.createElementNS("http://www.w3.org/2000/svg", "path");
-		element.setAttribute("d", path.svgData());
-		element.setAttribute("fill", "red");
-		content.appendChild(element);
+		contentElement.appendChild(element);
+		elementShapeMap.set(element, path);
+		shapeElementMap.set(path, element);
+		updateElement(path);
 	}
 
 	function createRectangle(x, y, width, height) {
@@ -87,37 +206,44 @@
 	}
 
 	function createOval(x, y, width, height) {
-
+		// FIXME: Implement ovals
 	}
 
+
+
+
+	// Initial shape functions
+
 	function appendInitialRectangle(startX, startY) {
+		var initialShape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+		initialShape.x.baseVal.value = startX;
+		initialShape.y.baseVal.value = startY;
+		initialShape.width.baseVal.value = 0;
+		initialShape.height.baseVal.value = 0;
+		initialShape.style.fill = "teal";
+		contentElement.appendChild(initialShape);
 		initialShapeDetails = {
 			type: InitialShape.RECTANGLE,
 			initialMouseX: startX,
-			initialMouseY: startY
+			initialMouseY: startY,
+			element: initialShape
 		};
-		initialShape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-		initialShape.setAttribute("x", startX.toString());
-		initialShape.setAttribute("y", startY.toString());
-		initialShape.setAttribute("width", "0");
-		initialShape.setAttribute("height", "0");
-		initialShape.setAttribute("fill", "teal");
-		content.appendChild(initialShape);
 	}
 
 	function appendInitialOval(startX, startY) {
+		var initialShape = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+		initialShape.cx.baseVal.value = startX;
+		initialShape.cy.baseVal.value = startY;
+		initialShape.rx.baseVal.value = 0;
+		initialShape.ry.baseVal.value = 0;
+		initialShape.style.fill = "teal";
+		contentElement.appendChild(initialShape);
 		initialShapeDetails = {
 			type: InitialShape.OVAL,
 			initialMouseX: startX,
-			initialMouseY: startY
+			initialMouseY: startY,
+			element: initialShape
 		};
-		initialShape = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
-		initialShape.setAttribute("cx", startX.toString());
-		initialShape.setAttribute("cy", startY.toString());
-		initialShape.setAttribute("rx", "0");
-		initialShape.setAttribute("ry", "0");
-		initialShape.setAttribute("fill", "teal");
-		content.appendChild(initialShape);
 	}
 
 	function computeRectangleBounds(x1, y1, x2, y2) {
@@ -137,20 +263,22 @@
 		var width = details[2];
 		var height = details[3];
 		if (initialShapeDetails.type == InitialShape.RECTANGLE) {
-			initialShape.setAttribute("x", x.toString());
-			initialShape.setAttribute("y", y.toString());
-			initialShape.setAttribute("width", width.toString());
-			initialShape.setAttribute("height", height.toString());
+			var element = initialShapeDetails.element;
+			element.x.baseVal.value = x;
+			element.y.baseVal.value = y;
+			element.width.baseVal.value = width;
+			element.height.baseVal.value = height;
 		} else if (initialShapeDetails.type == InitialShape.OVAL) {
-			initialShape.setAttribute("cx", (x + width / 2).toString());
-			initialShape.setAttribute("cy", (y + height / 2).toString());
-			initialShape.setAttribute("rx", (width / 2).toString());
-			initialShape.setAttribute("ry", (height / 2).toString());
+			var element = initialShapeDetails.element;
+			element.cx.baseVal.value = x + width / 2;
+			element.cy.baseVal.value = y + height / 2;
+			element.rx.baseVal.value = width / 2;
+			element.ry.baseVal.value = height / 2;
 		}
 	}
 
 	function commitInitialShape(finalX, finalY) {
-		content.removeChild(initialShape);
+		contentElement.removeChild(initialShapeDetails.element);
 		var details = computeRectangleBounds(finalX, finalY, initialShapeDetails.initialMouseX, initialShapeDetails.initialMouseY);
 		var x = details[0];
 		var y = details[1];
@@ -163,38 +291,67 @@
 		}
 	}
 
-	function mouseDownEventHandler(event) {
-		if (model.tool == Tool.SELECTION) {
-			// FIXME: Implement rectangular selection
-		} else if (model.tool == Tool.CREATE_RECTANGLE) {
-			model.mode = Mode.CREATING_SHAPE;
+
+
+
+	// Event Handlers
+
+	function mouseDownContentEventHandler(event) {
+		var clickedShape;
+		var clickedHandle;
+		if (tool == Tool.SELECTION) {
+			if (event.target == contentElement) {
+				clearSelection();
+			} else if (clickedShape = elementShapeMap.get(event.target)) {
+				// FIXME: Only clear the selection if the shift key is not held down.
+				clearSelection();
+				selectShape(clickedShape);
+			} else if (selectionDetails.handleElements.has(event.target)) {
+				mode = Mode.SELECTING_HANDLE;
+				selectionDetails.gestureStartX = event.offsetX;
+				selectionDetails.gestureStartY = event.offsetY;
+			}
+		} else if (tool == Tool.CREATE_RECTANGLE) {
+			mode = Mode.CREATING_SHAPE;
 			appendInitialRectangle(event.offsetX, event.offsetY);
-		} else if (model.tool == Tool.CREATE_OVAL) {
-			model.mode = Mode.CREATING_SHAPE;
+		} else if (tool == Tool.CREATE_OVAL) {
+			mode = Mode.CREATING_SHAPE;
 			appendInitialOval(event.offsetX, event.offsetY);
 		}
 	}
 
-	function mouseUpEventHandler(event) {
-		if (model.tool == Tool.SELECTION) {
-			// FIXME: Implement rectangular selection
-		} else if (model.tool == Tool.CREATE_RECTANGLE) {
-			model.mode = Mode.NOTHING;
+	function mouseMoveContentEventHandler(event) {
+		if (mode == Mode.CREATING_SHAPE) {
+			resizeInitialShape(event.offsetX, event.offsetY);
+		} else if (mode == Mode.SELECTING_HANDLE || mode == Mode.MOVING_HANDLES) {
+			mode = Mode.MOVING_HANDLES;
+			moveSelectedComponents(event.offsetX - selectionDetails.gestureStartX, event.offsetY - selectionDetails.gestureStartY);
+		}
+	}
+
+	function mouseUpContentEventHandler(event) {
+		if (tool == Tool.SELECTION) {
+			if (mode == Mode.SELECTING_HANDLE) {
+				mode = Mode.NOTHING;
+				toggleHandleSelection(event.target);
+			} else if (mode == Mode.MOVING_HANDLES) {
+				mode = Mode.NOTHING;
+			}
+		} else if (tool == Tool.CREATE_RECTANGLE) {
+			mode = Mode.NOTHING;
 			commitInitialShape(event.offsetX, event.offsetY);
-		} else if (model.tool == Tool.CREATE_OVAL) {
-			model.mode = Mode.NOTHING;
+		} else if (tool == Tool.CREATE_OVAL) {
+			mode = Mode.NOTHING;
 			commitInitialShape(event.offsetX, event.offsetY);
 		}
 	}
 
-	function mouseMoveEventHandler(event) {
-		if (model.mode == Mode.CREATING_SHAPE) {
-			resizeInitialShape(event.offsetX, event.offsetY);
-		}
-	}
+
+
+
+	// Initial Setup
 
 	function populateIconMap() {
-		iconMap = new Map();
 		iconMap.set(Tool.SELECTION, {
 			"identifier": "selectionIcon",
 			"on": "cursor.svg",
@@ -212,22 +369,22 @@
 		});
 	}
 
-	function selectTool(tool) {
-		if (tool == model.tool)
+	function selectTool(newTool) {
+		if (newTool == tool)
 			return;
 
-		var element = document.getElementById(iconMap.get(model.tool).identifier);
-		element.src = iconMap.get(model.tool).off;
-		model.tool = tool;
-		element = document.getElementById(iconMap.get(model.tool).identifier);
-		element.src = iconMap.get(model.tool).on;
+		var element = document.getElementById(iconMap.get(tool).identifier);
+		element.src = iconMap.get(tool).off;
+		tool = newTool;
+		element = document.getElementById(iconMap.get(tool).identifier);
+		element.src = iconMap.get(tool).on;
 	}
 
 	function populateEventListeners() {
-		content = document.getElementById("content");
-		content.addEventListener("mousedown", mouseDownEventHandler);
-		content.addEventListener("mouseup", mouseUpEventHandler);
-		content.addEventListener("mousemove", mouseMoveEventHandler);
+		contentElement = document.getElementById("content");
+		contentElement.addEventListener("mousedown", mouseDownContentEventHandler);
+		contentElement.addEventListener("mouseup", mouseUpContentEventHandler);
+		contentElement.addEventListener("mousemove", mouseMoveContentEventHandler);
 
 		var selectionIcon = document.getElementById("selectionIcon");
 		selectionIcon.addEventListener("click", function() {
