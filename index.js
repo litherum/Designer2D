@@ -54,8 +54,10 @@
 
 	var Tool = {
 		SELECTION: 0,
-		CREATE_RECTANGLE: 1,
-		CREATE_OVAL: 2
+		DIRECT_SELECTION: 1,
+		ADD_CONTROL_POINT: 2,
+		CREATE_RECTANGLE: 3,
+		CREATE_OVAL: 4
 	};
 
 	var InitialShape = {
@@ -357,6 +359,16 @@
 			"on": "cursor.svg",
 			"off": "cursorbase.svg"
 		});
+		iconMap.set(Tool.DIRECT_SELECTION, {
+			"identifier": "directSelectionIcon",
+			"on": "directcursor.svg",
+			"off": "directcursorbase.svg"
+		});
+		iconMap.set(Tool.ADD_CONTROL_POINT, {
+			"identifier": "addControlPointIcon",
+			"on": "addcontrolpoint.svg",
+			"off": "addcontrolpointbase.svg"
+		});
 		iconMap.set(Tool.CREATE_RECTANGLE, {
 			"identifier": "addRectangleIcon",
 			"on": "addrect.svg",
@@ -389,6 +401,14 @@
 		var selectionIcon = document.getElementById("selectionIcon");
 		selectionIcon.addEventListener("click", function() {
 			selectTool(Tool.SELECTION);
+		});
+		var directSelectionIcon = document.getElementById("directSelectionIcon");
+		directSelectionIcon.addEventListener("click", function() {
+			selectTool(Tool.DIRECT_SELECTION);
+		});
+		var addControlPointIcon = document.getElementById("addControlPointIcon");
+		addControlPointIcon.addEventListener("click", function() {
+			selectTool(Tool.ADD_CONTROL_POINT);
 		});
 		var addRectangleIcon = document.getElementById("addRectangleIcon");
 		addRectangleIcon.addEventListener("click", function() {
