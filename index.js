@@ -42,7 +42,7 @@
 			} else if (component.componentType == PathComponentType.LINE) {
 				element.pathSegList.appendItem(element.createSVGPathSegLinetoAbs(component.data.x, component.data.y));
 			} else if (component.componentType == PathComponentType.CURVE) {
-				element.pathSegList.appendItem(element.createSVGPathSegCurvetoCubicAbs(component.data[0].x, component.data[0].y, component.data[1].x, component.data[1].y, component.data[2].x, component.data[2].y));
+				element.pathSegList.appendItem(element.createSVGPathSegCurvetoCubicAbs(component.data[2].x, component.data[2].y, component.data[0].x, component.data[0].y, component.data[1].x, component.data[1].y));
 			} else if (component.componentType == PathComponentType.CLOSE) {
 				element.pathSegList.appendItem(element.createSVGPathSegClosePath());
 			}
@@ -100,6 +100,8 @@
 
 
 
+	// Saving and Loading
+
 	function reset(resetMode) {
 		while (contentElement.childNodes.length > 0) {
 			var node = contentElement.childNodes[0];
@@ -145,7 +147,10 @@
 		for (shape of obj.shapes) {
 			var path = new Path();
 			path.components = shape.components;
-			contentElement.appendChild(path.createElement());
+			var element = path.createElement();
+			contentElement.appendChild(element);
+			shapeElementMap.set(path, element);
+			elementShapeMap.set(element, path);
 		}
 	}
 
