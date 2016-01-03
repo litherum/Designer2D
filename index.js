@@ -1,42 +1,56 @@
-(function() {
-	var PathComponent = {
+//(function() {
+	function Point(x, y) {
+		this.x = x;
+		this.y = y;
+	}
+
+	var PathComponentType = {
 		MOVE: 0,
 		LINE: 1,
-		CLOSE: 2
+		CURVE: 2,
+		CLOSE: 3
 	};
+
+	function PathComponent(componentType, data) {
+		this.componentType = componentType;
+		this.data = data;
+	}
+
 	function Path() {
 		this.components = [];
 	}
-	Path.prototype.moveTo = function(x, y) {
-		this.components.push({
-			type: PathComponent.MOVE,
-			data: [x, y]
-		})
+	Path.prototype.clear = function() {
+		this.components = [];
+	}
+	Path.prototype.moveTo = function(destination) {
+		this.components.push(new PathComponent(PathComponentType.MOVE, destination));
 	};
-	Path.prototype.lineTo = function(x, y) {
-		this.components.push({
-			type: PathComponent.LINE,
-			data: [x, y]
-		})
+	Path.prototype.lineTo = function(destination) {
+		this.components.push(new PathComponent(PathComponentType.LINE, destination));
 	};
+	Path.prototype.curveTo = function(cp1, cp2, destination) {
+		this.components.push(new PathComponent(PathComponentType.CURVE, [cp1, cp2, destination]));
+	}
 	Path.prototype.close = function() {
-		this.components.push({
-			type: PathComponent.CLOSE
-		})
-	};
-	Path.prototype.svgData = function() {
-		// FIXME: Do this with SVGPathSegList OM.
-		var result = ""
-		for (var i = 0; i < this.components.length; ++i) {
-			var element = this.components[i];
-			if (element.type == PathComponent.MOVE) {
-				result += "M " + element.data[0] + " " + element.data[1];
-			} else if (element.type == PathComponent.LINE) {
-				result += "L " + element.data[0] + " " + element.data[1];
-			} else if (element.type == PathComponent.CLOSE) {
-				result += "Z";
+		this.components.push(new PathComponent(PathComponentType.CLOSE, undefined));
+	}
+	Path.prototype.populateElement = function(element) {
+		element.pathSegList.clear();
+		for (component of this.components) {
+			if (component.componentType == PathComponentType.MOVE) {
+				element.pathSegList.appendItem(element.createSVGPathSegMovetoAbs(component.data.x, component.data.y));
+			} else if (component.componentType == PathComponentType.LINE) {
+				element.pathSegList.appendItem(element.createSVGPathSegLinetoAbs(component.data.x, component.data.y));
+			} else if (component.componentType == PathComponentType.CURVE) {
+				element.pathSegList.appendItem(element.createSVGPathSegCurvetoCubicAbs(component.data[0].x, component.data[0].y, component.data[1].x, component.data[1].y, component.data[2].x, component.data[2].y));
+			} else if (component.componentType == PathComponentType.CLOSE) {
+				element.pathSegList.appendItem(element.createSVGPathSegClosePath());
 			}
 		}
+	}
+	Path.prototype.createElement = function() {
+		var result = document.createElementNS("http://www.w3.org/2000/svg", "path");
+		this.populateElement(result);
 		return result;
 	}
 
@@ -49,7 +63,9 @@
 		NOTHING: 0,
 		CREATING_SHAPE: 1,
 		SELECTING_HANDLE: 2,
-		MOVING_HANDLES: 3
+		MOVING_HANDLES: 3,
+		SAVE: 4,
+		LOAD: 5
 	};
 
 	var Tool = {
@@ -65,6 +81,8 @@
 		OVAL: 1
 	}
 
+	var LOCAL_STORAGE_KEY_NAME = "SavedDesigns";
+
 
 
 
@@ -76,7 +94,189 @@
 	var elementShapeMap = new Map();
 	var mode = Mode.NOTHING;
 	var tool = Tool.SELECTION;
-	var initialShapeDetails;
+
+	var contentElement;
+
+
+
+
+	function reset(resetMode) {
+		while (contentElement.childNodes.length > 0) {
+			var node = contentElement.childNodes[0];
+			node.parentNode.removeChild(node);
+		}
+		iconMap = new Map();
+		shapeElementMap = new Map();
+		elementShapeMap = new Map();
+		if (resetMode) {
+			mode = Mode.NOTHING;
+		}
+		selectTool(Tool.SELECTION);
+	}
+
+	function saveObject() {
+		var shapes = [];
+		for (pair of shapeElementMap) {
+			shapes.push(pair[0]);
+		}
+		return {
+			version: 1,
+			shapes: shapes
+		};
+	}
+
+	function saveData() {
+		return JSON.stringify(saveObject());
+	}
+
+	function verifyLoadObject(obj) {
+		if (typeof obj != "object") {
+			return false;
+		}
+		if (!obj.version || obj.version != 1) {
+			return false;
+		}
+		// FIXME: Add more verification logic.
+		return true;
+	}
+
+	function loadObject(obj) {
+		reset(false);
+		for (shape of obj.shapes) {
+			var path = new Path();
+			path.components = shape.components;
+			contentElement.appendChild(path.createElement());
+		}
+	}
+
+	function load(data) {
+		try {
+			var obj = JSON.parse(data);
+			if (!obj || !verifyLoadObject(obj)) {
+				return undefined;
+			}
+			loadObject(obj);
+			openIconClicked();
+		} catch (e) {
+			return undefined;
+		}
+	}
+
+	function iterateLocalStorageSaveList(callback) {
+		var designList = window.localStorage.getItem(LOCAL_STORAGE_KEY_NAME);
+		if (!designList) {
+			return;
+		}
+		try {
+			var obj = JSON.parse(designList);
+			if (!obj) {
+				return;
+			}
+			// FIXME: Add more verification logic.
+			for (save of obj) {
+				if (!save.name || !save.data || !verifyLoadObject(save.data)) {
+					continue;
+				}
+				callback(save.name, save.data);
+			}
+		} catch (e) {
+			return;
+		}
+	}
+
+	function populateLocalStorageSaveList() {
+		var selectElement = document.getElementById("localStorageLoadData");
+		while (selectElement.childNodes.length > 0) {
+			selectElement.removeChild(selectElement.childNodes[0]);
+		}
+		iterateLocalStorageSaveList(function(name, data) {
+			var optionElement = document.createElement("option");
+			optionElement.textContent = save.name;
+			optionElement.value = save.name;
+			selectElement.appendChild(optionElement);
+		});
+	}
+
+	function immediateLoad() {
+		load(document.getElementById("immediateLoadData").value);
+	}
+
+	function localStorageLoad() {
+		var selectElement = document.getElementById("localStorageLoadData");
+		var selectedIndex = selectElement.selectedIndex;
+		if (selectedIndex == -1) {
+			return;
+		}
+		var saveName = selectElement.childNodes[selectElement.selectedIndex].value;
+		iterateLocalStorageSaveList(function(name, value) {
+			if (name != saveName) {
+				return;
+			}
+			loadObject(value);
+		});
+		openIconClicked();
+	}
+
+	function localStorageSave() {
+		var baseObject = [];
+		var designList = window.localStorage.getItem(LOCAL_STORAGE_KEY_NAME);
+		if (designList) {
+			try {
+				var b = JSON.parse(designList);
+				if (b && Array.isArray(b)) {
+					baseObject = b;
+				}
+			} catch (e) {
+			}
+		}
+		var nameSelectionField = document.getElementById("localStorageSaveName");
+		var newName = nameSelectionField.value;
+		baseObject = baseObject.filter(function(item) {
+			return typeof item == "object" && item.name && item.name != newName;
+		});
+		baseObject.push({
+			name: newName,
+			data: saveObject()
+		})
+		window.localStorage.setItem(LOCAL_STORAGE_KEY_NAME, JSON.stringify(baseObject));
+		nameSelectionField.value = "";
+		document.getElementById("saveCheck").style.display = "inline";
+		populateLocalStorageSaveList();
+	}
+
+	function openIconClicked() {
+		var openDialog = document.getElementById("openDialog");
+		if (mode != Mode.NOTHING) {
+			openDialog.style.display = "none";
+			mode = Mode.NOTHING;
+			return;
+		}
+		openDialog.style.display = "block";
+		mode = Mode.LOAD;
+	}
+
+	function saveIconClicked() {
+		var saveDialog = document.getElementById("saveDialog");
+		if (mode != Mode.NOTHING) {
+			saveDialog.style.display = "none";
+			document.getElementById("saveCheck").style.display = "none";
+			mode = Mode.NOTHING;
+			return;
+		}
+		saveDialog.style.display = "block";
+		document.getElementById("saveData").textContent = saveData();
+		mode = Mode.SAVE;
+	}
+
+
+
+
+
+
+
+
+
+/*	var initialShapeDetails;
 	var selectionDetails = {
 		handleElements: new Map(),
 		selectedShapes: new Map(),
@@ -85,7 +285,6 @@
 	};
 
 
-	var contentElement;
 
 
 
@@ -292,6 +491,7 @@
 			createOval(x, y, width, height);
 		}
 	}
+*/
 
 
 
@@ -299,7 +499,7 @@
 	// Event Handlers
 
 	function mouseDownContentEventHandler(event) {
-		var clickedShape;
+		/*var clickedShape;
 		var clickedHandle;
 		if (tool == Tool.SELECTION) {
 			if (event.target == contentElement) {
@@ -319,20 +519,20 @@
 		} else if (tool == Tool.CREATE_OVAL) {
 			mode = Mode.CREATING_SHAPE;
 			appendInitialOval(event.offsetX, event.offsetY);
-		}
+		}*/
 	}
 
 	function mouseMoveContentEventHandler(event) {
-		if (mode == Mode.CREATING_SHAPE) {
+		/*if (mode == Mode.CREATING_SHAPE) {
 			resizeInitialShape(event.offsetX, event.offsetY);
 		} else if (mode == Mode.SELECTING_HANDLE || mode == Mode.MOVING_HANDLES) {
 			mode = Mode.MOVING_HANDLES;
 			moveSelectedComponents(event.offsetX - selectionDetails.gestureStartX, event.offsetY - selectionDetails.gestureStartY);
-		}
+		}*/
 	}
 
 	function mouseUpContentEventHandler(event) {
-		if (tool == Tool.SELECTION) {
+		/*if (tool == Tool.SELECTION) {
 			if (mode == Mode.SELECTING_HANDLE) {
 				mode = Mode.NOTHING;
 				toggleHandleSelection(event.target);
@@ -345,7 +545,7 @@
 		} else if (tool == Tool.CREATE_OVAL) {
 			mode = Mode.NOTHING;
 			commitInitialShape(event.offsetX, event.offsetY);
-		}
+		}*/
 	}
 
 
@@ -398,30 +598,32 @@
 		contentElement.addEventListener("mouseup", mouseUpContentEventHandler);
 		contentElement.addEventListener("mousemove", mouseMoveContentEventHandler);
 
-		var selectionIcon = document.getElementById("selectionIcon");
-		selectionIcon.addEventListener("click", function() {
+		document.getElementById("selectionIcon").addEventListener("click", function() {
 			selectTool(Tool.SELECTION);
 		});
-		var directSelectionIcon = document.getElementById("directSelectionIcon");
-		directSelectionIcon.addEventListener("click", function() {
+		document.getElementById("directSelectionIcon").addEventListener("click", function() {
 			selectTool(Tool.DIRECT_SELECTION);
 		});
-		var addControlPointIcon = document.getElementById("addControlPointIcon");
-		addControlPointIcon.addEventListener("click", function() {
+		document.getElementById("addControlPointIcon").addEventListener("click", function() {
 			selectTool(Tool.ADD_CONTROL_POINT);
 		});
-		var addRectangleIcon = document.getElementById("addRectangleIcon");
-		addRectangleIcon.addEventListener("click", function() {
+		document.getElementById("addRectangleIcon").addEventListener("click", function() {
 			selectTool(Tool.CREATE_RECTANGLE);
 		});
-		var addOvalIcon = document.getElementById("addOvalIcon");
-		addOvalIcon.addEventListener("click", function() {
+		document.getElementById("addOvalIcon").addEventListener("click", function() {
 			selectTool(Tool.CREATE_OVAL);
 		});
+
+		document.getElementById("openIcon").addEventListener("click", openIconClicked);
+		document.getElementById("saveIcon").addEventListener("click", saveIconClicked);
+		document.getElementById("immediateLoad").addEventListener("click", immediateLoad);
+		document.getElementById("localStorageLoad").addEventListener("click", localStorageLoad);
+		document.getElementById("localStorageSave").addEventListener("click", localStorageSave);
 	}
 
 	window.addEventListener("load", function(event) {
 		populateIconMap();
 		populateEventListeners();
+		populateLocalStorageSaveList();
 	});
-})();
+//})();
