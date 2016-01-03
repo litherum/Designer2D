@@ -27,7 +27,7 @@ body {
         <div  class="top-item" style="flex-grow: 1; font-size: 30px; text-align: center; padding-top: 3px;">2D Designer</div>
         <img id="openIcon" class="top-item" src="open.svg">
         <img id="saveIcon" class="top-item" src="save.svg">
-        <div id="openDialog" style="display: none; position: absolute; z-index: 1; top: 50px; right: 55px; background: lightgrey; border: 2px solid black;">
+        <div id="openDialog" style="display: none; position: absolute; z-index: 1; top: 50px; right: 55px; background: lightgrey; border: 2px solid black; box-shadow: 5px 5px 5px black;">
             <div style="display: flex; flex-direction: row">
                 <textarea id="immediateLoadData" autocapitalize="none" autocomplete="off" rows="4"></textarea>
                 <div style="display: flex; flex-direction: column; justify-content: center">
@@ -42,7 +42,7 @@ body {
                 </div>
             </div>
         </div>
-        <div id="saveDialog" style="display: none; position: absolute; z-index: 1; top: 50px; right: 5px; background: lightgrey; border: 2px solid black;">
+        <div id="saveDialog" style="display: none; position: absolute; z-index: 1; top: 50px; right: 5px; background: lightgrey; border: 2px solid black; box-shadow: 5px 5px 5px black;">
             <div><textarea id="saveData" autocapitalize="none" autocomplete="off" rows="4"></textarea></div>
             <input id="localStorageSaveName" type="text">
             <input id="localStorageSave" type="submit" value="Save">

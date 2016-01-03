@@ -153,12 +153,12 @@
 		try {
 			var obj = JSON.parse(data);
 			if (!obj || !verifyLoadObject(obj)) {
-				return undefined;
+				return false;
 			}
 			loadObject(obj);
-			openIconClicked();
+			return true;
 		} catch (e) {
-			return undefined;
+			return false;
 		}
 	}
 
@@ -198,7 +198,11 @@
 	}
 
 	function immediateLoad() {
-		load(document.getElementById("immediateLoadData").value);
+		var textArea = document.getElementById("immediateLoadData")
+		if (load(textArea.value)) {
+			textArea.value = "";
+			openIconClicked();
+		}
 	}
 
 	function localStorageLoad() {
