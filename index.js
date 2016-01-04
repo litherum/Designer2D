@@ -3,6 +3,10 @@
 		this.x = x;
 		this.y = y;
 	}
+	Point.prototype.move = function(deltaX, deltaY) {
+		this.x += deltaX;
+		this.y += deltaY;
+	}
 
 	var PathComponentType = {
 		MOVE: 0,
@@ -16,8 +20,17 @@
 		this.data = data;
 	}
 
+	// Expect: Each subpath begins with a move, ends with a close, and the close doesn't actually move the pen
+	// (The last component's destination is already on top of the move component)
 	function Path() {
 		this.components = [];
+		this.color = "red";
+	}
+	Path.prototype.color = function() {
+		return this.color;
+	}
+	Path.prototype.setColor = function(color) {
+		this.color = color;
 	}
 	Path.prototype.clear = function() {
 		this.components = [];
@@ -34,6 +47,90 @@
 	Path.prototype.close = function() {
 		this.components.push(new PathComponent(PathComponentType.CLOSE, undefined));
 	}
+	Path.prototype.getComponent = function(i) {
+		return this.components[i];
+	}
+	Path.prototype.adopt = function(shape) {
+		this.components = [];
+		for (component of shape.components) {
+			if (component.componentType == PathComponentType.MOVE) {
+				this.moveTo(new Point(component.data.x, component.data.y));
+			} else if (component.componentType == PathComponentType.LINE) {
+				this.lineTo(new Point(component.data.x, component.data.y));
+			} else if (component.componentType == PathComponentType.CURVE) {
+				this.curveTo(new Point(component.data[0].x, component.data[0].y), new Point(component.data[1].x, component.data[1].y), new Point(component.data[2].x, component.data[2].y));
+			} else if (component.componentType == PathComponentType.CLOSE) {
+				this.close();
+			}
+		}
+		this.color = shape.color;
+	}
+	Path.prototype.constituentPoints = function() {
+		// FIXME: Unify the move with the last non-close component
+		var result = [];
+		var latestDestination = 0;
+		for (var componentIndex = 0; componentIndex < this.components.length; ++componentIndex) {
+			var component = this.components[componentIndex];
+			if (component.componentType == PathComponentType.MOVE) {
+				latestDestination = result.length;
+				result.push({
+					point: component.data,
+					onCurve: true,
+					componentIndex: componentIndex
+				});
+			} else if (component.componentType == PathComponentType.LINE) {
+				latestDestination = result.length;
+				result.push({
+					point: component.data,
+					onCurve: true,
+					componentIndex: componentIndex
+				});
+			} else if (component.componentType == PathComponentType.CURVE) {
+				var sourceIndex = latestDestination;
+				latestDestination = result.length;
+				result.push({
+					point: component.data[2],
+					onCurve: true,
+					componentIndex: componentIndex
+				});
+				result.push({
+					point: component.data[0],
+					onCurve: false,
+					attachmentIndex: sourceIndex,
+					initial: true
+				});
+				result.push({
+					point: component.data[1],
+					onCurve: false,
+					attachmentIndex: latestDestination,
+					initial: false
+				});
+			}
+		}
+		return result;
+	}
+	// Expecting indicies including the move and all lines / curves, but not any close components.
+	Path.prototype.move = function(componentIndices, deltaX, deltaY) {
+		for (index of componentIndices) {
+			var component = this.components[index];
+			if (component.componentType == PathComponentType.MOVE) {
+				component.data.move(deltaX, deltaY);
+			} else if (component.componentType == PathComponentType.LINE) {
+				component.data.move(deltaX, deltaY);
+			} else if (component.componentType == PathComponentType.CURVE) {
+				component.data[2].move(deltaX, deltaY);
+				component.data[1].move(deltaX, deltaY);
+			}
+
+			nextIndex = index + 1;
+			if (nextIndex < this.components.length) {
+				var nextComponent = this.components[nextIndex];
+				if (nextComponent.componentType == PathComponentType.CURVE) {
+					nextComponent.data[0].move(deltaX, deltaY);
+				}
+			}
+		}
+	}
 	Path.prototype.populateElement = function(element) {
 		element.pathSegList.clear();
 		for (component of this.components) {
@@ -47,12 +144,14 @@
 				element.pathSegList.appendItem(element.createSVGPathSegClosePath());
 			}
 		}
+		element.style.fill = this.color;
 	}
 	Path.prototype.createElement = function() {
 		var result = document.createElementNS("http://www.w3.org/2000/svg", "path");
 		this.populateElement(result);
 		return result;
 	}
+
 
 
 
@@ -94,6 +193,12 @@
 	var elementShapeMap = new Map();
 	var mode = Mode.NOTHING;
 	var tool = Tool.SELECTION;
+
+	var selection = {
+		// Shape -> Component index -> Component piece -> Handle element
+		componentHandleMap: new Map(),
+		handleComponentMap: new Map()
+	}
 
 	var contentElement;
 
@@ -146,7 +251,7 @@
 		reset(false);
 		for (shape of obj.shapes) {
 			var path = new Path();
-			path.components = shape.components;
+			path.adopt(shape);
 			var element = path.createElement();
 			contentElement.appendChild(element);
 			shapeElementMap.set(path, element);
@@ -282,6 +387,75 @@
 
 
 
+
+
+
+	// Selection
+
+	function selectShape(shape) {
+		selection.componentHandleMap.clear();
+		selection.handleComponentMap.clear();
+		var componentHandleMap = new Map();
+		selection.componentHandleMap.set(shape, componentHandleMap);
+
+		function updateMaps(componentIndex, componentPiece, handleElement) {
+			if (!componentHandleMap.has(componentIndex)) {
+				componentHandleMap.set(componentIndex, new Map());
+			}
+			componentHandleMap.get(componentIndex).set(componentPiece, handleElement);
+			selection.handleComponentMap.set(handleElement, {
+				shape: shape,
+				componentIndex: componentIndex,
+				componentPiece: componentPiece
+			});
+		}
+
+		var constituentPoints = shape.constituentPoints();
+		for (point of constituentPoints) {
+			if (point.onCurve) {
+				var diameter = 8;
+				var handle = document.createElementNS("http://www.w3.org/2000/svg", "rect")
+				handle.x.baseVal.value = point.point.x - diameter / 2;
+				handle.y.baseVal.value = point.point.y - diameter / 2;
+				handle.width.baseVal.value = diameter;
+				handle.height.baseVal.value = diameter;
+				handle.style.fill = "white";
+				handle.style.stroke = "none";
+				contentElement.appendChild(handle);
+
+				var componentPiece = shape.getComponent(point.componentIndex).componentType == PathComponentType.CURVE ? 0 : 2;
+				updateMaps(point.componentIndex, componentPiece, handle);
+			} else {
+				var diameter = 6;
+				var handle = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+				handle.cx.baseVal.value = point.point.x;
+				handle.cy.baseVal.value = point.point.y;
+				handle.rx.baseVal.value = diameter / 2;
+				handle.ry.baseVal.value = diameter / 2;
+				handle.style.fill = "transparent";
+				handle.style.stroke = "white";
+				contentElement.appendChild(handle);
+
+				var attachmentConstituentPoint = constituentPoints[point.attachmentIndex];
+				var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+				line.x1.baseVal.value = point.point.x;
+				line.y1.baseVal.value = point.point.y;
+				line.x2.baseVal.value = attachmentConstituentPoint.point.x;
+				line.y2.baseVal.value = attachmentConstituentPoint.point.y;
+				line.style.fill = "none";
+				line.style.stroke = "white";
+				contentElement.appendChild(line);
+
+				var componentPiece = point.initial ? 0 : 1;
+				updateMaps(attachmentConstituentPoint.componentIndex, componentPiece, handle);
+			}
+		}
+	}
+
+	function clearSelection() {
+		selection.componentHandleMap.clear();
+		selection.handleComponentMap.clear();
+	}
 
 
 
@@ -508,21 +682,21 @@
 	// Event Handlers
 
 	function mouseDownContentEventHandler(event) {
-		/*var clickedShape;
-		var clickedHandle;
 		if (tool == Tool.SELECTION) {
+			var clickedShape;
+			var clickedHandle;
 			if (event.target == contentElement) {
 				clearSelection();
 			} else if (clickedShape = elementShapeMap.get(event.target)) {
 				// FIXME: Only clear the selection if the shift key is not held down.
 				clearSelection();
 				selectShape(clickedShape);
-			} else if (selectionDetails.handleElements.has(event.target)) {
+			}/* else if (selectionDetails.handleElements.has(event.target)) {
 				mode = Mode.SELECTING_HANDLE;
 				selectionDetails.gestureStartX = event.offsetX;
 				selectionDetails.gestureStartY = event.offsetY;
-			}
-		} else if (tool == Tool.CREATE_RECTANGLE) {
+			}*/
+		}/* else if (tool == Tool.CREATE_RECTANGLE) {
 			mode = Mode.CREATING_SHAPE;
 			appendInitialRectangle(event.offsetX, event.offsetY);
 		} else if (tool == Tool.CREATE_OVAL) {
